@@ -1,0 +1,40 @@
+name: Fetch HighBar Data
+
+on:
+  schedule:
+    - cron: '*/15 * * * *' # 每 15 分钟运行一次
+  workflow_dispatch: {}
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch today's data and commit
+        env:
+          LIC: ${{ secrets.BIYING_LIC }}
+        run: |
+          set -e
+          DATE=$(date -u +%Y-%m-%d)
+          mkdir -p data
+          URL="https://api.biyingapi.com/hslt/ztgc/${DATE}/${LIC}"
+          echo "Fetching ${URL}"
+          # 使用 curl 保存到临时文件再移动，防止空响应覆盖已有文件
+          TMP=data/${DATE}.json.tmp
+          curl -s -f -o "$TMP" "$URL" || { echo "fetch failed"; rm -f "$TMP"; exit 0; }
+          mv "$TMP" data/${DATE}.json
+
+      - name: Commit and push data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          DATE=$(date -u +%Y-%m-%d)
+          git add data/${DATE}.json 2>/dev/null || true
+          # 检查是否有改动
+          if git status --porcelain | grep -q "data/"; then
+            git commit -m "Add/Update data for $(date -u +%Y-%m-%d)"
+            git push
+          else
+            echo "No changes to commit"
+          fi

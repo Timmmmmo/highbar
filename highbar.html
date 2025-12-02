@@ -1,0 +1,442 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>A股高标连线（最高连板）可视化</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <script>
+    // 动态加载 ECharts：优先 CDN，失败则回退到同目录下的本地文件 `echarts.min.js`。
+    (function(){
+      function load(src, onload, onerror){
+        var s = document.createElement('script'); s.src = src; s.async = true;
+        s.onload = onload; s.onerror = onerror; document.head.appendChild(s);
+      }
+      // 优先加载远程 CDN（可能被浏览器追踪保护阻断），失败后尝试本地文件。
+      load('https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js', function(){
+        console.log('echarts loaded from CDN');
+      }, function(){
+        console.warn('CDN echarts load failed, trying local ./echarts.min.js');
+        load('./echarts.min.js', function(){ console.log('echarts loaded from local file'); }, function(){ console.error('failed to load local echarts.min.js'); });
+      });
+    })();
+  </script>
+  <style>
+    :root{
+      color-scheme: light dark;
+      --bg: #0b0c10;
+      --fg: #e6e6e6;
+      --card: #16181d;
+      --accent: #3fa7ff;
+      --danger: #ff5a5f;
+      --muted: #8892b0;
+    }
+    html,body{height:100%;}
+    body{font-family: system-ui,-apple-system,'Segoe UI',Roboto,'Microsoft YaHei',sans-serif; margin:0; background:var(--bg); color:var(--fg);} 
+    header{padding:16px 20px; border-bottom:1px solid #222; position:sticky; top:0; background:var(--bg); z-index:10;} 
+    .title{font-size:20px; font-weight:700;}
+    .subtitle{font-size:12px; color:var(--muted);}
+    .container{max-width:1200px; margin:0 auto; padding:16px;}
+    .grid{display:grid; grid-template-columns: 1fr; gap:16px;}
+    @media(min-width:900px){ .grid{grid-template-columns: 2fr 1fr;} }
+    .card{background:var(--card); border:1px solid #222; border-radius:12px; padding:16px;}
+    .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap;}
+    label{font-size:12px; color:var(--muted);} 
+    input[type=text], select{background:#0f1116; color:var(--fg); border:1px solid #333; border-radius:8px; padding:8px 10px; min-width:240px;}
+    input[type=number]{background:#0f1116; color:var(--fg); border:1px solid #333; border-radius:8px; padding:6px 8px; width:100px;}
+    .btn{background:var(--accent); color:#000; border:none; border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer;}
+    .btn.muted{background:#333; color:var(--fg);} 
+    .btn.danger{background:var(--danger);}
+    .pill{display:inline-flex; align-items:center; gap:8px; background:#0f1116; border:1px solid #333; border-radius:999px; padding:8px 12px;}
+    .leading{display:flex; justify-content:space-between; align-items:center;}
+    .big{font-size:28px; font-weight:800;}
+    .small{font-size:12px; color:var(--muted);} 
+    .tbl{width:100%; border-collapse: collapse;}
+    .tbl th,.tbl td{padding:8px 10px; border-bottom:1px solid #222;}
+    .tbl th{color:var(--muted); font-weight:600; text-align:left;}
+    .tag{display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px;}
+    .tag.st{background:#432; color:#f88; border:1px solid #844;}
+    .tag.top{background:#123; color:#8fd; border:1px solid #38a;}
+    .foot{font-size:12px; color:var(--muted);}
+    a{color:#8fd;}
+    /* Modal for stock details */
+    .modal-backdrop{position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:9999;}
+    .modal-card{background:var(--card); color:var(--fg); border-radius:10px; padding:16px; width:min(640px,95%); box-shadow:0 8px 24px rgba(0,0,0,0.6);} 
+    .modal-card h3{margin:0 0 8px 0; font-size:16px}
+    .modal-row{display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid #222}
+    .modal-close{background:#333; color:var(--fg); border:none; padding:6px 10px; border-radius:6px; cursor:pointer}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">A股高标连线（最高连板）<span class="subtitle"> · 每5分钟自动刷新（交易时段） · 数据源：必盈API</span></div>
+  </header>
+  <div class="container">
+    <div class="grid">
+      <section class="card">
+        <div class="leading">
+          <div>
+            <div class="small">今日最高高标（去ST）</div>
+            <div id="todayTop" class="big">—</div>
+          </div>
+          <div class="row">
+            <button id="btnRefresh" class="btn">立即刷新</button>
+            <button id="btnExtend" class="btn muted" title="拉取更长的历史区间，可能触发接口限流">历史拉长到90天</button>
+          </div>
+        </div>
+        <div id="chart" style="height:420px; margin-top:12px;"></div>
+      </section>
+      <aside class="card">
+        <div class="row">
+            <label>licence证书：</label>
+            <input id="licence" type="text" placeholder="在此粘贴您的必盈API licence，例如 qsdcb567347iiohgdfd" />
+        </div>
+          <div class="row" style="margin-top:8px;">
+            <label>代理/数据 URL：</label>
+            <input id="proxyUrl" type="text" placeholder="可填代理地址，如 https://your-proxy.example.com? 或 留空使用官方 API（可能有 CORS）" />
+          </div>
+        <div class="row" style="margin-top:8px;">
+          <label>拉取天数：</label>
+          <input id="daysBack" type="number" min="5" max="180" value="30" />
+          <label><input id="excludeST" type="checkbox" checked /> 排除ST/*ST</label>
+          <label><input id="includeBJ" type="checkbox" /> 包含北交所（默认只看沪深）</label>
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <button id="btnSave" class="btn">保存设置</button>
+          <button id="btnClearCache" class="btn danger">清空本地缓存</button>
+        </div>
+        <p class="foot" style="margin-top:12px;">
+          使用说明：页面会调用 <code>https://api.biyingapi.com/hslt/ztgc/{yyyy-MM-dd}/{licence}</code> 获取当日涨停股池，字段中 <code>lbc</code> 为连板次数；脚本按天统计最高连板并绘制“高标连线”。（如遇跨域限制，请使用同域代理或在服务器端转发）
+        </p>
+        <details style="margin-top:8px;">
+          <summary class="foot">如遇CORS跨域，示例：Cloudflare Workers 代理</summary>
+          <pre style="white-space:pre-wrap; font-size:11px;">export default {
+  async fetch(req) {
+    const url = new URL(req.url);
+    const target = `https://ahighbar2.hjzhao86.workers.dev?d=${date}&lic=${state.licence}`;
+    const r = await fetch(target, {headers:{'origin':''}});
+    return new Response(await r.text(), {headers:{'content-type':'application/json'}});
+  }
+}
+// 客户端改为 fetch('/proxy?d=2025-12-01&lic=YOUR_LICENCE')
+          </pre>
+        </details>
+      </aside>
+    </div>
+
+    <section class="card" style="margin-top:16px;">
+      <div id="statusMsg" class="foot" style="margin-bottom:8px;color:#f66"> </div>
+      <div class="small">今日涨停股池明细（按连板次数降序，已过滤设置）</div>
+      <table class="tbl" id="tbl">
+        <thead>
+          <tr><th>代码</th><th>名称</th><th>连板</th><th>涨幅%</th><th>首次涨停时间</th><th>最后涨停时间</th><th>所属</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="foot" style="margin-top:16px;">
+      <div>提示：A股常规交易时段为 9:30–11:30 与 13:00–15:00（尾盘14:57–15:00为集合竞价）。页面仅在交易时段内自动刷新，其他时段停止轮询。</div>
+      <div>数据来源与字段示例请参考：必盈API文档与社区文章。</div>
+    </section>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtDate = (d) => d.toISOString().slice(0,10);
+const sleep = (ms) => new Promise(r=>setTimeout(r, ms));
+const isTradingNow = () => {
+  const now = new Date();
+  const dow = now.getDay(); // 0 Sun, 6 Sat
+  if(dow===0 || dow===6) return false;
+  const hm = now.getHours()*100 + now.getMinutes();
+  return (hm>=930 && hm<=1130) || (hm>=1300 && hm<=1500);
+};
+
+const state = {
+  licence: localStorage.getItem('licence') || '',
+  daysBack: parseInt(localStorage.getItem('daysBack')||'30',10),
+  excludeST: (localStorage.getItem('excludeST')||'1')==='1',
+  includeBJ: (localStorage.getItem('includeBJ')||'0')==='1',
+  proxyUrl: localStorage.getItem('proxyUrl') || '',
+  cache: JSON.parse(localStorage.getItem('ztgcCache')||'{}')
+};
+
+// UI init
+$('licence').value = state.licence;
+$('daysBack').value = state.daysBack;
+$('excludeST').checked = state.excludeST;
+$('includeBJ').checked = state.includeBJ;
+$('btnSave').onclick = () => {
+  state.licence = $('licence').value.trim();
+  state.proxyUrl = $('proxyUrl').value.trim();
+  state.daysBack = parseInt($('daysBack').value,10);
+  state.excludeST = $('excludeST').checked;
+  state.includeBJ = $('includeBJ').checked;
+  localStorage.setItem('licence', state.licence);
+  localStorage.setItem('proxyUrl', state.proxyUrl);
+  localStorage.setItem('daysBack', String(state.daysBack));
+  localStorage.setItem('excludeST', state.excludeST?'1':'0');
+  localStorage.setItem('includeBJ', state.includeBJ?'1':'0');
+  refreshAll();
+};
+$('btnClearCache').onclick = () => { state.cache={}; localStorage.removeItem('ztgcCache'); alert('缓存已清空'); };
+$('btnExtend').onclick = () => { $('daysBack').value = 90; state.daysBack = 90; localStorage.setItem('daysBack','90'); refreshAll(); };
+$('btnRefresh').onclick = () => refreshAll();
+
+// 设置 proxy input 初始值
+const proxyEl = document.getElementById('proxyUrl');
+if(proxyEl) proxyEl.value = state.proxyUrl || '';
+
+// 状态消息显示
+function setStatus(msg, isError){
+  const el = document.getElementById('statusMsg');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.style.color = isError? '#f66' : '#9aa4b2';
+}
+
+let chart = null;
+function ensureChartReady(cb){
+  if(window.echarts){
+    if(!chart) chart = echarts.init(document.getElementById('chart'));
+    return cb && cb();
+  }
+  // 如果 echarts 还没加载，稍后重试
+  setTimeout(()=> ensureChartReady(cb), 200);
+}
+
+function applyCache(date, data){
+  state.cache[date] = data; localStorage.setItem('ztgcCache', JSON.stringify(state.cache));
+}
+
+async function fetchPool(date){
+  const cached = state.cache[date];
+  if(cached) return cached;
+  if(!state.licence){ return []; }
+  // 构建候选 URL 列表：优先使用用户配置的 proxyUrl（如果有），然后尝试内置 worker，最后尝试官方 api（可能存在 CORS）
+  const candidates = [];
+  if(state.proxyUrl){
+    // 若用户直接给出含参数的 URL（带 ? 或 带 {date} 占位），尽量智能拼接
+    if(state.proxyUrl.includes('{') && state.proxyUrl.includes('date')){
+      // 如果使用占位符形式 e.g. https://host/.../{date}/{lic}
+      candidates.push(state.proxyUrl.replace('{date}', date).replace('{lic}', encodeURIComponent(state.licence)));
+    }else{
+      const sep = state.proxyUrl.includes('?') ? '&' : '?';
+      candidates.push(state.proxyUrl + sep + 'd=' + encodeURIComponent(date) + '&lic=' + encodeURIComponent(state.licence));
+    }
+  }
+  // 保留原来的 worker 作为次选
+  candidates.push(`https://ahighbar2.hjzhao86.workers.dev?d=${date}&lic=${state.licence}`);
+  // 官方 API 作为最后回退（注意：官方 API 可能有 CORS 限制）
+  candidates.push(`https://api.biyingapi.com/hslt/ztgc/${date}/${state.licence}`);
+
+  let lastErr = null;
+  for(const url of candidates){
+    try{
+      setStatus('正在从 ' + url.replace(/\?.*$/,'') + ' 获取数据...', false);
+      const r = await fetch(url);
+      if(!r.ok){ lastErr = new Error('HTTP ' + r.status); continue; }
+      const data = await r.json();
+      applyCache(date, data);
+      await sleep(200);
+      setStatus('', false);
+      return data;
+    }catch(e){
+      console.warn('fetch failed for', url, e);
+      lastErr = e;
+      // 继续尝试下一个候选
+      await sleep(150);
+      continue;
+    }
+  }
+  setStatus('无法获取数据：请检查 licence 与代理设置，或在浏览器中关闭追踪保护后重试。', true);
+  console.error('fetchPool all candidates failed', lastErr);
+  return [];
+}
+
+function filterItems(items){
+  return items.filter(it => {
+    const name = (it.mc||'').toUpperCase();
+    const isST = name.includes('ST');
+    const jys = (it.jys||'').toLowerCase();
+    const isBJ = (it.dm||'').includes('.BJ') || (jys==='bj') || (/^\d{6}$/.test(it.dm) && it.dm.startsWith('8')); // 8xxxx 北交所常用编码
+    if(state.excludeST && isST) return false;
+    if(!state.includeBJ && isBJ) return false;
+    return true;
+  });
+}
+
+function highestByDay(items){
+  // 返回最高连板与对应股票列表
+  let maxL = 0; let tops = [];
+  items.forEach(it => {
+    const lbc = parseInt(it.lbc||0,10) || 0;
+    if(lbc > maxL){ maxL = lbc; tops = [it]; }
+    else if(lbc === maxL){ tops.push(it); }
+  });
+  return {maxL, tops};
+}
+
+async function refreshTodayTable(date){
+  const items = filterItems(await fetchPool(date));
+  const byLbc = [...items].sort((a,b)=> (parseInt(b.lbc||0,10) - parseInt(a.lbc||0,10)) || (parseFloat(b.zf||0) - parseFloat(a.zf||0)) );
+  const tbody = document.querySelector('#tbl tbody');
+  tbody.innerHTML = '';
+  byLbc.forEach((it, idx) => {
+    const tr = document.createElement('tr');
+    const isTop = idx===0;
+    tr.innerHTML = `<td>${it.dm||''}</td>
+      <td>${it.mc||''} ${((it.mc||'').toUpperCase().includes('ST')?'<span class="tag st">ST</span>':'')}${isTop?'<span class="tag top">TOP</span>':''}</td>
+      <td>${it.lbc||'-'}</td>
+      <td>${(it.zf!=null)?Number(it.zf).toFixed(2):''}</td>
+      <td>${it.fbt||''}</td>
+      <td>${it.lbt||''}</td>
+      <td>${it.jys||''}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function refreshAll(){
+  const today = fmtDate(new Date());
+  const days = [];
+  for(let i=0;i<state.daysBack;i++){
+    const d = new Date(); d.setDate(d.getDate()-i);
+    days.push(fmtDate(d));
+  }
+  const seriesData = [];
+  const labels = [];
+  let todayInfo = {text:'—'};
+  for(const d of days.reverse()){
+    const items = filterItems(await fetchPool(d));
+    const {maxL, tops} = highestByDay(items);
+    // 把数据项从单纯数字变为对象，携带当日最高股票中文名和明细列表，供 tooltip/label 使用
+    const topName = tops[0]?.mc || '—';
+    // topList 包含对象，供 tooltip 与详情 modal 使用
+    const topList = tops.map(t => ({ mc: t.mc||'', dm: t.dm||'', lbc: t.lbc||0, zf: t.zf||'', fbt: t.fbt||'', lbt: t.lbt||'', jys: t.jys||'' }));
+    seriesData.push({ value: maxL, topName, topList });
+    labels.push(d);
+    if(d===today){
+      const topLbc = maxL || 0;
+      todayInfo = {text: (topName==='—'?'—': `${topName} · ${topLbc}板`)};
+    }
+  }
+
+  $('todayTop').textContent = todayInfo.text;
+  await refreshTodayTable(today);
+
+  ensureChartReady(function(){
+    try{
+      chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params){
+        const p = params[0] || {};
+        const date = p.axisValue || '';
+        const v = (p.data && (p.data.value != null)) ? p.data.value : (p.value != null ? p.value : '-');
+        const topName = (p.data && p.data.topName) ? p.data.topName : '—';
+        let html = `${date}<br/>最高连板: ${v}板<br/>当日最高: ${topName}`;
+        if(p.data && Array.isArray(p.data.topList) && p.data.topList.length){
+          html += '<br/><hr style="border:none;border-top:1px solid #222;margin:6px 0;"/>';
+          p.data.topList.forEach(st =>{
+            const name = st.mc || '';
+            const code = st.dm || '';
+            const lbc = st.lbc || 0;
+            const zf = (st.zf!=null && st.zf!=='')? Number(st.zf).toFixed(2) : '';
+            const times = `${st.fbt||''} → ${st.lbt||''}`;
+            const jys = st.jys || '';
+            html += `${name} (${code}) · ${lbc}板 · ${zf?zf+'%':''} ${jys?(' · '+jys):''}<br/>`;
+          });
+          html += '<div style="margin-top:6px;font-size:11px;color:#9aa4b2">点击图中点可查看更详细信息</div>';
+        }
+        return html;
+      }
+    },
+    grid: {left:40, right:24, top:28, bottom:40},
+    xAxis: {type:'category', data: labels, axisLabel:{color:'#9aa4b2'}},
+    yAxis: {type:'value', name:'最高连板', min:0, axisLabel:{color:'#9aa4b2'}},
+    series: [{
+      type:'line', name:'高标连线', data: seriesData,
+      smooth:true, symbol:'circle', symbolSize:6,
+      lineStyle:{width:2, color:'#3fa7ff'},
+      itemStyle:{color:'#3fa7ff'},
+      areaStyle:{color:'rgba(63,167,255,0.12)'},
+      // 鼠标或触点高亮时显示 label（股票中文名）
+      label: {
+        show: true,
+        position: 'top',
+        fontSize: 11,
+        formatter: function(params){ 
+          const name = params.data && params.data.topName ? params.data.topName : '';
+          if(!name) return '';
+          return name.length>8 ? name.slice(0,8)+'…' : name;
+        }
+      },
+      emphasis: { label: { show: true, fontWeight: 700, color: '#fff' } },
+      cursor: 'pointer'
+    }]
+      });
+    }catch(e){ console.error('setOption error', e); }
+    // 点击交互：点击图上节点弹出模态框显示股票明细，并提供外链
+    try{ chart.off && chart.off('click'); }catch(e){}
+    chart.on('click', function(params){
+    if(!params || params.componentType!=='series') return;
+    const data = params.data || {};
+    if(!data.topList || !Array.isArray(data.topList)) return;
+    // 创建模态框（若已存在则替换内容）
+    let backdrop = document.getElementById('stockModalBackdrop');
+    if(!backdrop){
+      backdrop = document.createElement('div'); backdrop.id='stockModalBackdrop'; backdrop.className='modal-backdrop';
+      const card = document.createElement('div'); card.className='modal-card'; card.id='stockModalCard';
+      backdrop.appendChild(card);
+      document.body.appendChild(backdrop);
+    }
+    const card = document.getElementById('stockModalCard');
+    card.innerHTML = '';
+    const title = document.createElement('h3'); title.textContent = `${params.axisValue || ''} · 最高连板 ${data.value || 0}板`; card.appendChild(title);
+    data.topList.forEach(st=>{
+      const row = document.createElement('div'); row.className='modal-row';
+      const left = document.createElement('div'); left.style.flex='1'; left.innerHTML = `<strong>${st.mc||''}</strong> <span style="color:#9aa4b2">(${st.dm||''})</span><div style="font-size:12px;color:#9aa4b2;margin-top:4px">${st.jys||''} · ${st.lbc||0}板 · ${(st.zf!=null && st.zf!=='')?Number(st.zf).toFixed(2)+'%':''}</div>`;
+      const right = document.createElement('div'); right.style.textAlign='right';
+      const open = document.createElement('button'); open.className='modal-close'; open.textContent='打开外部';
+      open.onclick = ()=>{
+        // 推荐外链：东方财富页面（若代码为 6/3/0 开头需补市场前缀），同时保留百度搜索后备
+        const code = (st.dm||'').replace(/\s+/g,'');
+        let url = '';
+        if(/^\d{6}$/.test(code)){
+          // 简单规则：沪深前缀
+          if(code.startsWith('6')) url = `http://quote.eastmoney.com/${code}.html`;
+          else url = `http://quote.eastmoney.com/${code}.html`;
+        }else{
+          url = `https://www.baidu.com/s?wd=${encodeURIComponent(code||st.mc||'')}`;
+        }
+        window.open(url, '_blank');
+      };
+      right.appendChild(open);
+      row.appendChild(left); row.appendChild(right);
+      card.appendChild(row);
+    });
+    const closeWrap = document.createElement('div'); closeWrap.style.marginTop='10px'; closeWrap.style.textAlign='right';
+    const btnClose = document.createElement('button'); btnClose.className='modal-close'; btnClose.textContent='关闭';
+    btnClose.onclick = ()=>{ const b = document.getElementById('stockModalBackdrop'); if(b) b.remove(); };
+    closeWrap.appendChild(btnClose); card.appendChild(closeWrap);
+  });
+}
+
+// Auto refresh loop only during trading
+async function autoLoop(){
+  while(true){
+    if(isTradingNow()){ await refreshAll(); }
+    await sleep(5*60*1000);
+  }
+}
+
+// First paint
+refreshAll();
+autoLoop();
+
+</script>
+</body>
+</html>
