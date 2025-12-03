@@ -163,5 +163,54 @@
     refreshAll();
     autoLoop();
   </script>
+  
+<script>
+  async function loadTodayData() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth()+1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const url = `./data/${yyyy}-${mm}-${dd}.json`;
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      return await r.json();
+    } catch {
+      const d2 = new Date(d.getTime() - 24*60*60*1000);
+      const yyyy2 = d2.getFullYear();
+      const mm2 = String(d2.getMonth()+1).padStart(2, '0');
+      const dd2 = String(d2.getDate()).padStart(2, '0');
+      const url2 = `./data/${yyyy2}-${mm2}-${dd2}.json`;
+      const r2 = await fetch(url2).catch(() => null);
+      return r2 && r2.ok ? r2.json() : { date: `${yyyy}-${mm}-${dd}`, pool: [], summary: { count: 0, highest: 0 } };
+    }
+  }
+
+  async function refreshChartFromFile() {
+    const data = await loadTodayData();
+    if (!window.echarts) { console.error('ECharts not loaded'); return; }
+    const el = document.getElementById('chart');
+    const chart = echarts.getInstanceByDom(el) || echarts.init(el);
+
+    const titleText = `高标连线：${data.summary?.highest ?? 0} 连`;
+    const option = {
+      title: { text: titleText },
+      tooltip: {},
+      xAxis: { type: 'category', data: data.pool.map(x => x.name || x.code) },
+      yAxis: { type: 'value' },
+      series: [{ type: 'bar', data: data.pool.map(x => x.boards || 0) }]
+    };
+    chart.setOption(option);
+  }
+
+  async function refreshAll(){
+    await refreshChartFromFile();
+    // 如需卡片列表：使用 data.pool
+    // const card = document.getElementById('stocks');
+    // card.innerHTML = '';
+    // data.pool.forEach(st => card.appendChild(createStockRow({ code: st.code, mc: st.name })));
+  }
+</script>
+
 </body>
 </html>
