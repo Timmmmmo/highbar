@@ -2,6 +2,21 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  
+<!-- 本地优先（仓库已有 echarts.min.js） -->
+<script src="./echarts.min
+<!-- 可选：CDN 覆盖，若浏览器允许则加载；失败则继续用本地 -->
+<script>
+  (function loadCdnEcharts(){
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';
+    s.async = true;
+    s.onload = function(){ console.log('CDN echarts loaded (optional overwrite).'); };
+    s.onerror = function(){ console.warn('CDN echarts failed, using local copy.'); };
+    document.head.appendChild(s);
+  })();
+</script>
+
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>高标连线（Highbar）</title>
