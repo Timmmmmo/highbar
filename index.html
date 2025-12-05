@@ -2,41 +2,48 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  
-<!-- 本地优先（仓库已有 echarts.min.js） -->
-<script src="./echarts.min
-<!-- 可选：CDN 覆盖，若浏览器允许则加载；失败则继续用本地 -->
-<script>
-  (function loadCdnEcharts(){
-    var s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';
-    s.async = true;
-    s.onload = function(){ console.log('CDN echarts loaded (optional overwrite).'); };
-    s.onerror = function(){ console.warn('CDN echarts failed, using local copy.'); };
-    document.head.appendChild(s);
-  })();
-</script>
-
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>高标连线（Highbar）</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif; margin: 0; padding: 16px; }
-    #app { max-width: 1000px; margin: 0 auto; }
-    #chart { height: 480px; border: 1px solid #eee; border-radius: 8px; }
-    #stocks { margin-top: 16px; padding: 12px; border: 1px solid #eee; border-radius: 8px; }
-    .row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #f0f0f0; }
+    :root {
+      --bg: #ffffff;
+      --fg: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --primary: #2563eb;
+      --warning: #f59e0b;
+    }
+    html, body { background: var(--bg); color: var(--fg); }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif;
+      margin: 0;
+    }
+    header { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    main { padding: 16px 20px; max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 0; font-size: 20px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 960px){ .grid { grid-template-columns: 3fr 2fr; } }
+    .card { border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+    .card > .card-hd { padding: 12px 14px; border-bottom: 1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+    .card > .card-bd { padding: 12px 14px; }
+    #chart { height: 520px; }
+    .status { font-size: 13px; color: var(--muted); }
+    .row { display:flex; align-items:center; justify-content:space-between; padding: 6px 0; border-bottom: 1px dashed var(--border); }
     .row:last-child { border-bottom: none; }
-    .left { color: #333; font-size: 14px; }
-    .right { display: flex; gap: 8px; }
-    button { cursor: pointer; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
-    button:hover { background: #f5f5f5; }
-    .modal-close { background: #fffbeb; border-color: #facc15; }
+    .left { font-size: 14px; color: var(--fg); }
+    .right { display:flex; gap: 8px; }
+    button { cursor: pointer; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+    button:hover { background: #f9fafb; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }
+    .ok { color: var(--primary); }
+    .warn { color: var(--warning); }
+    .footer { padding: 16px 20px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
   </style>
 
-  <!-- 本地优先加载 ECharts，避免浏览器 Tracking Prevention 影响 -->
+  <!-- 本地优先加载 ECharts：避免 Edge Tracking Prevention 对第三方脚本的存储/网络限制 -->
   ./echarts.min.js</script>
-  <!-- 可选：CDN 作为附加覆盖（不是必须） -->
+  <!-- 可选：CDN 覆盖（不是必须）。如加载成功，会覆盖为同版本/更新版本；失败继续使用本地副本。 -->
   <script>
     (function loadCdnEcharts(){
       var s = document.createElement('script');
@@ -49,183 +56,174 @@
   </script>
 </head>
 <body>
-  <div id="app">
-    <h1 style="margin: 0 0 12px;">高标连线（Highbar）</h1>
-    <div id="chart"></div>
-    <div id="stocks"></div>
-    <!-- 可选：如果你使用模态层，这里提供一个占位符以便关闭按钮能正常工作 -->
-    <div id="stockModalBackdrop" style="display:none"></div>
-  </div>
+  <header>
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <h1>高标连线（Highbar）</h1>
+      <div class="status" id="statusLine">初始化中…</div>
+    </div>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section class="card">
+        <div class="card-hd">
+          <div>最高连板曲线 / 池内分布</div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span class="pill"><span>数据日期</span><strong id="dataDate">--</strong></span>
+            <span class="pill"><span>样本数</span><strong id="dataCount">0</strong></span>
+            <button id="btnRefresh">手动刷新</button>
+          </div>
+        </div>
+        <div class="card-bd">
+          <div id="chart"></div>
+        </div>
+      </section>
+
+      <aside class="card">
+        <div class="card-hd">
+          <div>涨停股池（Top 20 连板）</div>
+          <div class="status">点击“查看”跳转到个股页面</div>
+        </div>
+        <div class="card-bd" id="stocks"></div>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div>
+      说明：前端从同源 <code>data/YYYY-MM-DD.json</code> 读取 GitHub Actions 定时写入的真实数据；脚本仅在交易时段自动轮询。
+    </div>
+  </footer>
 
   <script>
-    // ------- 工具函数 -------
-    function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
-    // 简单的 A 股交易时间判断（本地时间，09:30-11:30，13:00-15:00）
+    // ===== 工具函数与交易时段判断（北京时间） =====
+    function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
     function isTradingNow(){
-      var now = new Date();
-      var h = now.getHours();
-      var m = now.getMinutes();
-      var t = h * 60 + m;
-      return (t >= 9*60 + 30 && t <= 11*60 + 30) || (t >= 13*60 && t <= 15*60);
+      // 工作日 09:30-11:30 / 13:00-15:00
+      const now = new Date();
+      const wd = now.getDay();
+      if (wd === 0 || wd === 6) return false; // 周末
+      const t = now.getHours()*60 + now.getMinutes();
+      return (t >= 9*60+30 && t <= 11*60+30) || (t >= 13*60 && t <= 15*60);
     }
 
-    // ------- 图表刷新（示例，可替换为你的真实逻辑） -------
-    function refreshChart(){
-      var el = document.getElementById('chart');
-      if (!window.echarts){
-        console.error('ECharts not available.');
-        return;
+    // ===== 数据加载（同源 data/YYYY-MM-DD.json；若今日文件不存在则回退到前一天） =====
+    async function loadTodayData(){
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth()+1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const url = `./data/${yyyy}-${mm}-${dd}.json`;
+      try {
+        const r = await fetch(url, { cache: 'no-store' });
+        if (!r.ok) throw new Error(r.status);
+        return await r.json();
+      } catch(e){
+        console.warn('today file not ready, fallback to previous day...', e);
+        const d2 = new Date(d.getTime() - 24*60*60*1000);
+        const y2 = d2.getFullYear();
+        const m2 = String(d2.getMonth()+1).padStart(2, '0');
+        const d2d = String(d2.getDate()).padStart(2, '0');
+        const url2 = `./data/${y2}-${m2}-${d2d}.json`;
+        const r2 = await fetch(url2).catch(()=>null);
+        return r2 && r2.ok ? r2.json() : { date: `${yyyy}-${mm}-${dd}`, pool: [], summary: { count: 0, highest: 0 } };
       }
-      var chart = echarts.getInstanceByDom(el) || echarts.init(el);
-      var option = {
-        title: { text: '高标连线（示例）' },
+    }
+
+    // ===== 图表渲染（ECharts） =====
+    function renderChart(data){
+      if (!window.echarts){ console.error('ECharts not available.'); return; }
+      const el = document.getElementById('chart');
+      const chart = echarts.getInstanceByDom(el) || echarts.init(el);  /* 标准初始化用法 */
+      const names = data.pool.map(x => x.name || x.code);
+      const boards = data.pool.map(x => Number(x.boards||0));
+      const option = {
+        title: { text: `高标连线：${data.summary?.highest ?? 0} 连` },
         tooltip: {},
-        xAxis: { type: 'category', data: ['一','二','三','四','五','六','七'] },
+        xAxis: { type: 'category', data: names },
         yAxis: { type: 'value' },
-        series: [{ type: 'line', data: [1,3,2,5,4,6,5] }]
+        series: [ { type: 'bar', data: boards } ],
+        grid: { left: 40, right: 20, top: 60, bottom: 40 }
       };
       chart.setOption(option);
     }
 
-    // ------- 构建个股行与“打开”按钮（修复了 411–426 段的语法问题） -------
-    function createStockRow(st){
-      // st: { code: '000001', mc: '平安银行' }
-      var row = document.createElement('div');
-      row.className = 'row';
-
-      var left = document.createElement('div');
-      left.className = 'left';
-      left.textContent = (st.mc || st.name || '') + '  ' + (st.code || '');
-
-      var right = document.createElement('div');
-      right.className = 'right';
-
-      var open = document.createElement('button');
-      open.textContent = '查看';
-      open.className = 'open-btn';
-
-      open.onclick = function(){
-        var code = st.code || '';
-        var name = st.mc || st.name || '';
-        var url;
-        if (/^\d{6}$/.test(code)){
-          // 修正为模板字符串，eastmoney 行情页
-          url = `http://quote.eastmoney.com/${code}.html`;
-        }else{
-          // 修正为 baidu 域名、逻辑或与 encodeURIComponent
-          url = `https://www.baidu.com/s?wd=${encodeURIComponent(code || name || '')}`;
-        }
-        window.open(url, '_blank');
-      };
-
-      right.appendChild(open);
-      row.appendChild(left);
-      row.appendChild(right);
-      return row;
-    }
-
-    // ------- 示例的个股卡片刷新（含关闭按钮） -------
-    function refreshStocks(){
-      var card = document.getElementById('stocks');
+    // ===== 个股列表（Top 20 by boards） =====
+    function renderStocks(data){
+      const card = document.getElementById('stocks');
       card.innerHTML = '';
-
-      // 示例列表：替换为你的真实数据源
-      var demoList = [
-        { code: '000001', mc: '平安银行' },
-        { code: '600519', mc: '贵州茅台' },
-        { code: '', mc: '示例（无代码）' }
-      ];
-
-      demoList.forEach(function(st){
-        var row = createStockRow(st);
+      const list = [...data.pool].sort((a,b)=>Number(b.boards||0)-Number(a.boards||0)).slice(0,20);
+      if (!list.length){
+        const p = document.createElement('div');
+        p.className = 'status';
+        p.textContent = '暂无数据（等待 Actions 写入或非交易日）';
+        card.appendChild(p);
+        return;
+      }
+      list.forEach(st => {
+        const row = document.createElement('div'); row.className = 'row';
+        const left = document.createElement('div'); left.className = 'left';
+        left.textContent = `${st.name||''}  ${st.code||''}`;
+        const right = document.createElement('div'); right.className = 'right';
+        const pill = document.createElement('span'); pill.className = 'pill'; pill.innerHTML = `<span>连板</span><strong>${st.boards||0}</strong>`;
+        const btn = document.createElement('button'); btn.textContent = '查看';
+        btn.onclick = () => {
+          const code = st.code || '';
+          const name = st.name || '';
+          let url;
+          if (/^\d{6}$/.test(code)){
+            // 模板字符串：修复早先的 '...' + ${code} 问题
+            url = `http://quote.eastmoney.com/${code}.html`;
+          }else{
+            // 逻辑或：修复早先的按位或 |；并使用 encodeURIComponent
+            url = `https://www.baidu.com/s?wd=${encodeURIComponent(code || name || '')}`;
+          }
+          window.open(url, '_blank');
+        };
+        right.appendChild(pill);
+        right.appendChild(btn);
+        row.appendChild(left);
+        row.appendChild(right);
         card.appendChild(row);
       });
-
-      // 关闭区域（对应你截图中的关闭按钮逻辑）
-      var closeWrap = document.createElement('div');
-      closeWrap.style.marginTop = '10px';
-      closeWrap.style.textAlign = 'right';
-
-      var btnClose = document.createElement('button');
-      btnClose.className = 'modal-close';
-      btnClose.textContent = '关闭';
-
-      btnClose.onclick = function(){
-        var b = document.getElementById('stockModalBackdrop');
-        if (b) b.remove();
-      };
-
-      closeWrap.appendChild(btnClose);
-      card.appendChild(closeWrap);
-      // ⚠️ 注意：这里不再有多余的 "});"，避免语法错误
     }
 
-    // ------- 主刷新与自动轮询 -------
+    // ===== 主刷新逻辑 =====
     async function refreshAll(){
-      refreshChart();
-      refreshStocks();
-    }
-
-    // 仅在交易时段循环刷新
-    async function autoLoop(){
-      while(true){
-        if (isTradingNow()){ await refreshAll(); }
-        await sleep(5*60*1000); // 每 5 分钟
+      const statusLine = document.getElementById('statusLine');
+      statusLine.textContent = '正在加载数据…';
+      try{
+        const data = await loadTodayData();
+        document.getElementById('dataDate').textContent = data.date || '--';
+        document.getElementById('dataCount').textContent = data.summary?.count ?? data.pool?.length ?? 0;
+        renderChart(data);
+        renderStocks(data);
+        statusLine.innerHTML = `<span class="ok">✔</span> 已更新`;
+      }catch(err){
+        console.error(err);
+        statusLine.innerHTML = `<span class="warn">⚠</span> 加载失败`;
       }
     }
 
-    // 首次渲染 + 自动轮询
-    refreshAll();
-    autoLoop();
-  </script>
-  
-<script>
-  async function loadTodayData() {
-    const d = new Date();
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth()+1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const url = `./data/${yyyy}-${mm}-${dd}.json`;
-    try {
-      const r = await fetch(url, { cache: 'no-store' });
-      if (!r.ok) throw new Error(r.status);
-      return await r.json();
-    } catch {
-      const d2 = new Date(d.getTime() - 24*60*60*1000);
-      const yyyy2 = d2.getFullYear();
-      const mm2 = String(d2.getMonth()+1).padStart(2, '0');
-      const dd2 = String(d2.getDate()).padStart(2, '0');
-      const url2 = `./data/${yyyy2}-${mm2}-${dd2}.json`;
-      const r2 = await fetch(url2).catch(() => null);
-      return r2 && r2.ok ? r2.json() : { date: `${yyyy}-${mm}-${dd}`, pool: [], summary: { count: 0, highest: 0 } };
+    // ===== 自动轮询（仅交易时段，每 5 分钟） =====
+    async function autoLoop(){
+      while(true){
+        if (isTradingNow()){
+          await refreshAll();
+        }
+        await sleep(5*60*1000);
+      }
     }
-  }
 
-  async function refreshChartFromFile() {
-    const data = await loadTodayData();
-    if (!window.echarts) { console.error('ECharts not loaded'); return; }
-    const el = document.getElementById('chart');
-    const chart = echarts.getInstanceByDom(el) || echarts.init(el);
-
-    const titleText = `高标连线：${data.summary?.highest ?? 0} 连`;
-    const option = {
-      title: { text: titleText },
-      tooltip: {},
-      xAxis: { type: 'category', data: data.pool.map(x => x.name || x.code) },
-      yAxis: { type: 'value' },
-      series: [{ type: 'bar', data: data.pool.map(x => x.boards || 0) }]
-    };
-    chart.setOption(option);
-  }
-
-  async function refreshAll(){
-    await refreshChartFromFile();
-    // 如需卡片列表：使用 data.pool
-    // const card = document.getElementById('stocks');
-    // card.innerHTML = '';
-    // data.pool.forEach(st => card.appendChild(createStockRow({ code: st.code, mc: st.name })));
-  }
-</script>
-
+    // ===== 事件绑定与首次渲染 =====
+    document.getElementById('btnRefresh').addEventListener('click', refreshAll);
+    (function ready(fn){
+      if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', fn); }
+      else { fn(); }
+    })(function(){
+      refreshAll();
+      autoLoop();
+    });
+  </script>
 </body>
 </html>
