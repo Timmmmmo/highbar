@@ -4,19 +4,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>A股高标连线（最高连板）可视化</title>
-  <meta name="description" content="基于必盈涨停股池的历史最高连板曲线可视化" />
-  <!-- 优先 CDN，失败回退到本地 -->
-  <script defer src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
-         font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Noto Sans CJK SC', sans-serif; margin: 0; padding: 16px;}
-    header, footer {margin-bottom: 16px;}
+  <title>必盈配额估算（蒙特卡洛）</title>
+  <meta name="description" content="基于经常异常阶梯的历史最高频度数据的概率可视化" />
+
+  <!-- ✅ 推荐：同源本地 ECharts，避免 Edge 跟踪防护对第三方域的限制 -->
+  ./echarts.min.js</script>
+
+  <style>
+    /* 你的样式保持不变即可 */
+    header, footer { margin-bottom: 16px; }
     #chart { width: 100%; height: 520px; background: #fafafa; border: 1px solid #eee; }
     .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
     .controls input { flex: 1 1 320px; padding: 8px; }
     .controls button { padding: 8px 12px; }
     .msg { margin-top: 8px; color: #c33; }
-  </script>
+  </style>
 </head>
+
 <body>
   <header>
     <h1>高标连线（最高连板）</h1>
