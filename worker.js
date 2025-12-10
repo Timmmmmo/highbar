@@ -1,41 +1,46 @@
-addEventListener('fetch', event => {
-  event.respondWith(handle(event.request));
-});
 
-// 如果你在 Worker 上配置了 Secret（命名为 BIYING_LIC），
-// 可以直接在 Worker 环境中使用全局变量 BIYING_LIC（通过 wrangler secret put 设置）。
-async function handle(req){
-  const url = new URL(req.url);
-  const d = url.searchParams.get('d') || url.pathname.split('/').pop() || '';
-  // 优先使用 query 中的 lic，否则使用部署时的 Secret（BIYING_LIC）
-  let lic = url.searchParams.get('lic') || '';
-  if(!lic && typeof BIYING_LIC !== 'undefined') lic = BIYING_LIC;
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const log = (msg, obj={}) => console.log(JSON.stringify({at: Date.now(), msg, ...obj}));
 
-  // 目标 API（按需修改）
-  const target = `https://api.biyingapi.com/hslt/ztgc/${d}/${lic}`;
+    // 示例：从查询参数或路径决定实际后端 API
+    const target = url.searchParams.get('target') || env.DEFAULT_TARGET; // 在 Cloudflare Secrets/Vars 中配置
+    if (!target) return new Response('Missing target', {status:400});
 
-  // 允许跨域的响应头
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization'
-  };
+    const reqInit = {
+      method: 'GET',
+      headers: {
+        'Authorization': env.BIYING_LIC ? `Bearer ${env.BIYING_LIC}` : undefined
+      }
+    };
 
-  if(req.method === 'OPTIONS'){
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
+    try {
+      const res = await fetch(target, reqInit);
+      log('proxy_ok', {status: res.status});
+      const body = await res.text();
 
-  try{
-    const r = await fetch(target, { method: 'GET' });
-    const body = await r.arrayBuffer();
-    const headers = new Headers(r.headers);
-    // 覆盖 CORS 头
-    for(const k in corsHeaders) headers.set(k, corsHeaders[k]);
-    return new Response(body, { status: r.status, headers });
-  }catch(err){
-    return new Response(JSON.stringify({ error: 'proxy_error', detail: String(err) }), {
-      status: 502,
-      headers: Object.assign({'Content-Type':'application/json'}, corsHeaders)
-    });
+      return new Response(body, {
+        status: res.status,
+        headers: {
+          'content-type': res.headers.get('content-type') || 'application/json; charset=utf-8',
+          // CORS
+          'access-control-allow-origin': '*',
+          'access-control-allow-methods': 'GET,OPTIONS',
+          'access-control-allow-headers': 'Content-Type,Authorization',
+          // 轻缓存（可按需调整；GitHub Pages 服务侧缓存无法自定义，代理可控）[10](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cache-Control)
+          'cache-control': 'public, max-age=60'
+        }
+      });
+    } catch (err) {
+      log('proxy_err', {error: String(err)});
+      return new Response(JSON.stringify({error: 'upstream_error', detail: String(err)}), {
+        status: 502,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'access-control-allow-origin': '*'
+        }
+      });
+    }
   }
 }
