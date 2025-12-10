@@ -1,11 +1,9 @@
 
-name: Fetch Limit-Up Pool (Biying)
-
+name: Fetch Daily Data
 on:
-  workflow_dispatch:
   schedule:
-    # 每 15 分钟（UTC）；脚本内部再按北京时间交易时段过滤
-    - cron: "*/15 * * * *"
+    - cron: "*/15 0-23 * * *"   # 每 15 分钟
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,33 +11,36 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    env:
-      TZ: Asia/Shanghai
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node.js 18.x
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: '20'
 
-      - name: Run fetch script
+      - name: Fetch data & write file
         env:
           BIYING_LIC: ${{ secrets.BIYING_LIC }}
-          BIYING_BASE: ${{ secrets.BIYING_BASE }}
+          TARGET_URL: ${{ secrets.TARGET_URL }}
         run: |
-          node scripts/fetch-biying.js
+          mkdir -p data
+          node -e "
+            const fs=require('fs');const https=require('https');
+            const today=new Date().toISOString().slice(0,10);
+            const url=process.env.TARGET_URL;
+            const headers=process.env.BIYING_LIC?{Authorization:`Bearer ${process.env.BIYING_LIC}`}:{};
+            https.get(url,{headers},(res)=>{
+              let raw=''; res.on('data',d=>raw+=d);
+              res.on('end',()=>{ fs.writeFileSync(`data/${today}.json`, raw); console.log('written', `data/${today}.json`); });
+            }).on('error',(e)=>{ console.error(e); process.exit(1); });
+          "
 
-      - name: Commit & Push data
-        if: success()
+      - name: Commit & push
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -n "$(git status --porcelain data/)" ]; then
-            git add data/
-            git commit -m "chore(data): update limit-up pool via Actions"
-            git push
-          else
-            echo "No changes to commit."
-          fi
+          git config user.name "gh-actions"
+          git config user.email "actions@github.com"
+          git add data/*.json || true
+          git commit -m "chore(data): update $(date -u +'%Y-%m-%d %H:%M:%S')" || echo "no changes"
+          git push
