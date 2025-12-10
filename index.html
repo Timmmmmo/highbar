@@ -1,229 +1,109 @@
 
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>高标连线（Highbar）</title>
-  <style>
-    :root {
-      --bg: #ffffff;
-      --fg: #111827;
-      --muted: #6b7280;
-      --border: #e5e7eb;
-      --primary: #2563eb;
-      --warning: #f59e0b;
-    }
-    html, body { background: var(--bg); color: var(--fg); }
-    body {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif;
-      margin: 0;
-    }
-    header { padding: 16px 20px; border-bottom: 1px solid var(--border); }
-    main { padding: 16px 20px; max-width: 1100px; margin: 0 auto; }
-    h1 { margin: 0; font-size: 20px; }
-    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
-    @media (min-width: 960px){ .grid { grid-template-columns: 3fr 2fr; } }
-    .card { border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-    .card > .card-hd { padding: 12px 14px; border-bottom: 1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
-    .card > .card-bd { padding: 12px 14px; }
-    #chart { height: 520px; }
-    .status { font-size: 13px; color: var(--muted); }
-    .row { display:flex; align-items:center; justify-content:space-between; padding: 6px 0; border-bottom: 1px dashed var(--border); }
-    .row:last-child { border-bottom: none; }
-    .left { font-size: 14px; color: var(--fg); }
-    .right { display:flex; gap: 8px; }
-    button { cursor: pointer; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-    button:hover { background: #f9fafb; }
-    .pill { display:inline-flex; align-items:center; gap:6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 12px; }
-    .ok { color: var(--primary); }
-    .warn { color: var(--warning); }
-    .footer { padding: 16px 20px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>A股高标连线（最高连板）可视化</title>
+  <meta name="description" content="基于必盈涨停股池的历史最高连板曲线可视化" />
+  <!-- 优先 CDN，失败回退到本地 -->
+  <script defer src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"
+         font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Noto Sans CJK SC', sans-serif; margin: 0; padding: 16px;}
+    header, footer {margin-bottom: 16px;}
+    #chart { width: 100%; height: 520px; background: #fafafa; border: 1px solid #eee; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    .controls input { flex: 1 1 320px; padding: 8px; }
+    .controls button { padding: 8px 12px; }
+    .msg { margin-top: 8px; color: #c33; }
   </style>
-
-  <!-- 本地优先加载 ECharts：避免 Edge Tracking Prevention 对第三方脚本的存储/网络限制 -->
-  ./echarts.min.js</script>
-  <!-- 可选：CDN 覆盖（不是必须）。如加载成功，会覆盖为同版本/更新版本；失败继续使用本地副本。 -->
-  <script>
-    (function loadCdnEcharts(){
-      var s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';
-      s.async = true;
-      s.onload = function(){ console.log('CDN echarts loaded (optional overwrite).'); };
-      s.onerror = function(){ console.warn('CDN echarts failed, using local copy.'); };
-      document.head.appendChild(s);
-    })();
-  </script>
 </head>
 <body>
   <header>
-    <div style="display:flex; align-items:center; justify-content:space-between;">
-      <h1>高标连线（Highbar）</h1>
-      <div class="status" id="statusLine">初始化中…</div>
-    </div>
+    <h1>高标连线（最高连板）</h1>
+    <p>默认优先使用同源数据 <code>./data/YYYY-MM-DD.json</code>；无数据时再走代理/API。</p>
   </header>
 
-  <main>
-    <div class="grid">
-      <section class="card">
-        <div class="card-hd">
-          <div>最高连板曲线 / 池内分布</div>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <span class="pill"><span>数据日期</span><strong id="dataDate">--</strong></span>
-            <span class="pill"><span>样本数</span><strong id="dataCount">0</strong></span>
-            <button id="btnRefresh">手动刷新</button>
-          </div>
-        </div>
-        <div class="card-bd">
-          <div id="chart"></div>
-        </div>
-      </section>
+  <section class="controls">
+    <input id="proxyUrl" type="url" placeholder="代理/数据 URL（可填 Cloudflare Worker 或直接数据 JSON 路径）" />
+    <button id="loadBtn">加载数据并绘图</button>
+    <button id="resetBtn">重置</button>
+  </section>
 
-      <aside class="card">
-        <div class="card-hd">
-          <div>涨停股池（Top 20 连板）</div>
-          <div class="status">点击“查看”跳转到个股页面</div>
-        </div>
-        <div class="card-bd" id="stocks"></div>
-      </aside>
-    </div>
-  </main>
+  <div id="chart" role="img" aria-label="最高连板走势图表"></div>
+  <div class="msg" id="msg"></div>
 
-  <footer class="footer">
-    <div>
-      说明：前端从同源 <code>data/YYYY-MM-DD.json</code> 读取 GitHub Actions 定时写入的真实数据；脚本仅在交易时段自动轮询。
-    </div>
+  <footer>
+    <small>© 2025 高标连线 • 本页面为静态展示，数据来源请按你的授权使用。</small>
   </footer>
 
-  <script>
-    // ===== 工具函数与交易时段判断（北京时间） =====
-    function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
-    function isTradingNow(){
-      // 工作日 09:30-11:30 / 13:00-15:00
-      const now = new Date();
-      const wd = now.getDay();
-      if (wd === 0 || wd === 6) return false; // 周末
-      const t = now.getHours()*60 + now.getMinutes();
-      return (t >= 9*60+30 && t <= 11*60+30) || (t >= 13*60 && t <= 15*60);
-    }
+  <script defer>
+    const $ = sel => document.querySelector(sel);
+    const todayStr = new Date().toISOString().slice(0,10);
 
-    // ===== 数据加载（同源 data/YYYY-MM-DD.json；若今日文件不存在则回退到前一天） =====
-    async function loadTodayData(){
-      const d = new Date();
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth()+1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const url = `./data/${yyyy}-${mm}-${dd}.json`;
+    async function fetchJson(url, opts) {
+      const ctrl = new AbortController();
+      const t = setTimeout(()=>ctrl.abort(), 12_000); // 12s 超时
       try {
-        const r = await fetch(url, { cache: 'no-store' });
-        if (!r.ok) throw new Error(r.status);
-        return await r.json();
-      } catch(e){
-        console.warn('today file not ready, fallback to previous day...', e);
-        const d2 = new Date(d.getTime() - 24*60*60*1000);
-        const y2 = d2.getFullYear();
-        const m2 = String(d2.getMonth()+1).padStart(2, '0');
-        const d2d = String(d2.getDate()).padStart(2, '0');
-        const url2 = `./data/${y2}-${m2}-${d2d}.json`;
-        const r2 = await fetch(url2).catch(()=>null);
-        return r2 && r2.ok ? r2.json() : { date: `${yyyy}-${mm}-${dd}`, pool: [], summary: { count: 0, highest: 0 } };
-      }
+        const res = await fetch(url, {mode: 'cors', cache:'no-store', signal: ctrl.signal, ...opts}); // 详见 MDN Fetch 行为
+        // 仅网络错误或被拦截才会 reject；4xx/5xx 仍 resolve（需检查 res.ok）[5](https://developer.mozilla.org/zh-CN/docs/Web/API/Fetch_API/Using_Fetch)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } finally { clearTimeout(t); }
     }
 
-    // ===== 图表渲染（ECharts） =====
-    function renderChart(data){
-      if (!window.echarts){ console.error('ECharts not available.'); return; }
-      const el = document.getElementById('chart');
-      const chart = echarts.getInstanceByDom(el) || echarts.init(el);  /* 标准初始化用法 */
-      const names = data.pool.map(x => x.name || x.code);
-      const boards = data.pool.map(x => Number(x.boards||0));
-      const option = {
-        title: { text: `高标连线：${data.summary?.highest ?? 0} 连` },
-        tooltip: {},
-        xAxis: { type: 'category', data: names },
-        yAxis: { type: 'value' },
-        series: [ { type: 'bar', data: boards } ],
-        grid: { left: 40, right: 20, top: 60, bottom: 40 }
-      };
-      chart.setOption(option);
-    }
+    function showMsg(text, isErr=true){ const el=$('#msg'); el.textContent = text ?? ''; el.style.color = isErr ? '#c33' : '#0a0'; }
 
-    // ===== 个股列表（Top 20 by boards） =====
-    function renderStocks(data){
-      const card = document.getElementById('stocks');
-      card.innerHTML = '';
-      const list = [...data.pool].sort((a,b)=>Number(b.boards||0)-Number(a.boards||0)).slice(0,20);
-      if (!list.length){
-        const p = document.createElement('div');
-        p.className = 'status';
-        p.textContent = '暂无数据（等待 Actions 写入或非交易日）';
-        card.appendChild(p);
-        return;
-      }
-      list.forEach(st => {
-        const row = document.createElement('div'); row.className = 'row';
-        const left = document.createElement('div'); left.className = 'left';
-        left.textContent = `${st.name||''}  ${st.code||''}`;
-        const right = document.createElement('div'); right.className = 'right';
-        const pill = document.createElement('span'); pill.className = 'pill'; pill.innerHTML = `<span>连板</span><strong>${st.boards||0}</strong>`;
-        const btn = document.createElement('button'); btn.textContent = '查看';
-        btn.onclick = () => {
-          const code = st.code || '';
-          const name = st.name || '';
-          let url;
-          if (/^\d{6}$/.test(code)){
-            // 模板字符串：修复早先的 '...' + ${code} 问题
-            url = `http://quote.eastmoney.com/${code}.html`;
-          }else{
-            // 逻辑或：修复早先的按位或 |；并使用 encodeURIComponent
-            url = `https://www.baidu.com/s?wd=${encodeURIComponent(code || name || '')}`;
-          }
-          window.open(url, '_blank');
-        };
-        right.appendChild(pill);
-        right.appendChild(btn);
-        row.appendChild(left);
-        row.appendChild(right);
-        card.appendChild(row);
+    function draw(data) {
+      // 数据格式假定：[{date:'YYYY-MM-DD', maxBoards: N}, ...]
+      const dom = $('#chart');
+      const chart = echarts.init(dom);
+      const dates = data.map(d=>d.date);
+      const values = data.map(d=>d.maxBoards);
+
+      chart.setOption({
+        title: {text: '历史最高连板'},
+        tooltip: {trigger: 'axis'},
+        xAxis: {type:'category', data: dates},
+        yAxis: {type:'value', min:0, name:'连板数'},
+        series: [{type:'line', name:'最高连板', data: values, smooth:true}],
+        grid: {left: 40, right: 24, top: 48, bottom: 36}
       });
+      window.addEventListener('resize', ()=>chart.resize());
     }
 
-    // ===== 主刷新逻辑 =====
-    async function refreshAll(){
-      const statusLine = document.getElementById('statusLine');
-      statusLine.textContent = '正在加载数据…';
-      try{
-        const data = await loadTodayData();
-        document.getElementById('dataDate').textContent = data.date || '--';
-        document.getElementById('dataCount').textContent = data.summary?.count ?? data.pool?.length ?? 0;
-        renderChart(data);
-        renderStocks(data);
-        statusLine.innerHTML = `<span class="ok">✔</span> 已更新`;
-      }catch(err){
-        console.error(err);
-        statusLine.innerHTML = `<span class="warn">⚠</span> 加载失败`;
+    async function loadData() {
+      showMsg('');
+      const localUrl = `./data/${todayStr}.json`;
+      const proxyUrl = $('#proxyUrl').value.trim();
+
+      // 1) 优先同源静态 JSON（无 CORS）
+      try {
+        const local = await fetchJson(localUrl, {mode:'same-origin'}); // 同源直接读，避免跨域
+        draw(local);
+        showMsg(`已加载同源数据：${localUrl}`, false);
+        return;
+      } catch (e) {
+        // 同源无数据或404则继续尝试代理
       }
-    }
 
-    // ===== 自动轮询（仅交易时段，每 5 分钟） =====
-    async function autoLoop(){
-      while(true){
-        if (isTradingNow()){
-          await refreshAll();
+      // 2) 再尝试用户输入的代理/数据 URL
+      if (proxyUrl) {
+        try {
+          const remote = await fetchJson(proxyUrl);
+          draw(remote);
+          showMsg(`已通过代理/数据URL加载：${proxyUrl}`, false);
+          return;
+        } catch (e) {
+          showMsg(`加载失败：${e.message}`);
         }
-        await sleep(5*60*1000);
+      } else {
+        showMsg('未找到同源数据；请提供代理/数据 URL');
       }
     }
 
-    // ===== 事件绑定与首次渲染 =====
-    document.getElementById('btnRefresh').addEventListener('click', refreshAll);
-    (function ready(fn){
-      if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', fn); }
-      else { fn(); }
-    })(function(){
-      refreshAll();
-      autoLoop();
-    });
+    $('#loadBtn').addEventListener('click', loadData);
+    $('#resetBtn').addEventListener('click', ()=>{ $('#proxyUrl').value=''; showMsg('已重置'); });
+    document.addEventListener('DOMContentLoaded', ()=>{ /* 可选：自动尝试加载 */ });
   </script>
 </body>
 </html>
